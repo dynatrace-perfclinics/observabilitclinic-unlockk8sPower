@@ -1,0 +1,154 @@
+{
+  "id": "5cf8ebef-a443-453c-8c63-4d9928a875c1",
+  "title": "Send a message to teams with unoptimized workload",
+  "description": "",
+  "tasks": {
+    "get_owners_1": {
+      "name": "get_owners_1",
+      "description": "Retrieves entity and extracts ownership data from it.",
+      "action": "dynatrace.ownership:get-ownership-from-entity",
+      "input": {
+        "entityIds": "\n{% for sleep in result(\"parse_result\").configs %}\n    {{ sleep.workloadid }},\n{% endfor %}",
+        "responsibilities": [
+          "Development",
+          "Security",
+          "Operations",
+          "Infrastructure",
+          "Line of Business",
+          "Not defined"
+        ]
+      },
+      "position": {
+        "x": 1,
+        "y": 3
+      },
+      "predecessors": [
+        "parse_result"
+      ],
+      "conditions": {
+        "states": {
+          "parse_result": "OK"
+        }
+      }
+    },
+    "parse_result": {
+      "name": "parse_result",
+      "description": "Build a custom task running js Code",
+      "action": "dynatrace.automations:run-javascript",
+      "input": {
+        "script": "// optional import of sdk modules\nimport { execution } from '@dynatrace-sdk/automation-utils';\n\ntype infoSleep = {\n  namespace: string\n  workload: string\n  clustername: string\n  owner : string\n  podname: string\n  containername:string\n  worloadid: string\n  memoryusage: double\n  ratio: int\n  newmemoryrequest: double\n  memoryrequest: double\n}\ntype Result = {\n  configs: infoOwner[]\n}\nvar resultat=Array<infoSleep> = new Array();\nexport default async function ({ execution_id }) {\n const ex = await execution(execution_id);\n  console.log('Automated script execution on behalf of', ex.trigger);\n  var result = await ex.result('collect_workload_without_bestpractice')\n\n  for (const workload of result.records )\n  {\n \n      let sleppresult: sleppInfo = {\n      workload: workload.workloadname,\n      clustername: workload.clustername,\n      namespace: workload.namespaceName,\n      owner: workload.owner,\n      podname: workload.podname,\n      containername: workload.containername,\n      workloadid : workload.workloadid,\n      ratio: workload.ratio,\n      memoryusage: workload.usage_memory,\n      newmemoryrequest:  workload.usage_memory * 1.3,\n      memoryrequest: workload.request_memory\n    }\n    \n    resultat.push(sleppresult)\n  }\n  const res: Result = { configs: resultat}\n  return res;\n}"
+      },
+      "position": {
+        "x": 0,
+        "y": 2
+      },
+      "predecessors": [
+        "collect_workload_without_bestpractice"
+      ],
+      "conditions": {
+        "states": {
+          "collect_workload_without_bestpractice": "OK"
+        },
+        "custom": "{{ result(\"collect_workload_without_bestpractice\").records | length >0 }}\n"
+      }
+    },
+    "send_message_1": {
+      "name": "send_message_1",
+      "description": "Send a message to a Slack workspace",
+      "action": "dynatrace.slack:slack-send-message",
+      "input": {
+        "channel": "{{  _.item.slackChannel }}",
+        "message": "* Missing K8s Ressource Optimizer Assistant *\nHello,  \nFrom observability data of the last 24h,\nThe following workload has unefficent memory usage :\n- For cluster *{{  _.item.clustername }}*\n  namespace: *{{  _.item.namespace }}*\n  workload name: *{{  _.item.workload }}*\n  current memory usage: {{  _.item.memoryusage }}  MiB\n  current memery requested: {{  _.item.memoryrequest }}  MiB\n  suggested memory request : {{  _.item.newmemoryrequest }} MiB ",
+        "reaction": [
+          "eyes"
+        ],
+        "connection": "vu9U3hXa3q0AAAABAB5hcHA6ZHluYXRyYWNlLnNsYWNrOmNvbm5lY3Rpb24ABnRlbmFudAAGdGVuYW50ACRhNTJjMDM2ZC1hNGJkLTM0NWMtOTQ5OC0zMzEzMzE1NWNmZWK-71TeFdrerQ",
+        "workflowID": "{{ execution().workflow.id }}",
+        "channelType": "expression",
+        "executionID": "{{ execution().id }}",
+        "executionDate": "{{ execution().started_at }}",
+        "appendToThread": false,
+        "selectedRequestType": 0,
+        "attachmentToggleValue": "none"
+      },
+      "position": {
+        "x": 0,
+        "y": 5
+      },
+      "predecessors": [
+        "merge_data_owner"
+      ],
+      "conditions": {
+        "states": {
+          "merge_data_owner": "OK"
+        },
+        "custom": "{{ result(\"merge_data_owner\").data | length >0 }}"
+      },
+      "concurrency": 1,
+      "withItems": "item in {{ result(\"merge_data_owner\").data }}"
+    },
+    "merge_data_owner": {
+      "name": "merge_data_owner",
+      "description": "Build a custom task running js Code",
+      "action": "dynatrace.automations:run-javascript",
+      "input": {
+        "script": "import { execution } from '@dynatrace-sdk/automation-utils';\nimport {isArray} from '@angular/facade/lang';\ntype infoOwner = {\n  namespace: string\n  workload: string\n  clustername: string\n  owner : string\n  podname: string\n  containername:string\n  worloadid: string\n  slackChannel: string\n  memoryusage: double\n  ratio: int\n  newmemoryrequest: double\n  memoryrequest: double\n}\ntype Result = {\n  configs: infoOwner[]\n}\nvar resultat=Array<infoOwner> = new Array();// optional import of sdk modules\n\n\nexport default async function ({ execution_id }) {\n  // your code goes here\n  // e.g. get the current execution\n  const ex = await execution(execution_id);\n  console.log('Automated script execution on behalf of', ex.trigger);\n\n  var result = await ex.result('parse_result');\n  var contactdetails=  await ex.result('get_owners_1');\n \n  for (const workload of result.configs )\n  {\n      var channel=\"\";\n      for(const own of contactdetails.owners)\n      {\n        \n        if(own.identifier==workload.owner)\n        {\n          const contactDetails = own.contactDetails;\n          if(contactDetails != undefined && contactDetails.length>0) \n          {\n            channel=contactDetails[0].slackChannel;\n            console.log(contactDetails[0].slackChannel);\n         }\n        }        \n      }\n     if(channel !=\"\" )\n     {\n         console.log(\"adding\");\n         let sleppresult: infoOwner = {\n          workload: workload.workload,\n          clustername: workload.clustername,\n          namespace: workload.namespace,\n          owner: workload.owner,\n          podname: workload.podname,\n          containername: workload.containername,\n          workloadid : workload.workloadid,\n          slackChannel : channel,\n          memoryusage: Math.round(workload.memoryusage/ 1000000),\n          ratio: workload.ratio,\n          newmemoryrequest:  Math.round(workload.newmemoryrequest / 1000000),\n          memoryrequest:  Math.round(workload.request_memory)\n        };\n       resultat.push(sleppresult);\n    }\n  }\n    \n  const res: Result = { data: resultat};\n  return res;\n\n}"
+      },
+      "position": {
+        "x": 0,
+        "y": 4
+      },
+      "predecessors": [
+        "deprecated_get_contact_details_1"
+      ],
+      "conditions": {
+        "states": {
+          "deprecated_get_contact_details_1": "OK"
+        }
+      }
+    },
+    "deprecated_get_contact_details_1": {
+      "name": "deprecated_get_contact_details_1",
+      "description": "Extracts a list of contact details from teams that are returned by the \"get_owners\" workflow action. Additionally, the contact details can be filtered by the contact type.",
+      "action": "dynatrace.ownership:get-contact-details-from-owners",
+      "input": {
+        "ownersJson": "{{result(\"get_owners_1\")}}",
+        "integrationTypes": [
+          "SLACK"
+        ],
+        "integrationTypesTotalCount": 4
+      },
+      "position": {
+        "x": 1,
+        "y": 4
+      },
+      "predecessors": [
+        "get_owners_1"
+      ],
+      "conditions": {
+        "states": {
+          "get_owners_1": "OK"
+        }
+      }
+    },
+    "collect_workload_without_bestpractice": {
+      "name": "collect_workload_without_bestpractice",
+      "description": "Executes DQL query",
+      "action": "dynatrace.automations:execute-dql-query",
+      "input": {
+        "query": "fetch dt.entity.container_group_instance, from: -30m \n| fields id, container.id = id, container.name = entity.name, ipAddress, containerizationType, containerImageName, containerProperties, cluster.id = belongs_to[dt.entity.kubernetes_cluster], namespace.id = belongs_to[dt.entity.cloud_application_namespace], workload.id = belongs_to[dt.entity.cloud_application], pod.id = belongs_to[dt.entity.cloud_application_instance],  namespaceName, workload.name = workloadName, pod.name = podName \n| filter isNotNull(cluster.id)\n| fieldsAdd Appnamespace = in(namespaceName, \"dynatrace\",\"kube-system\",\"falco\",\"kyverno\",\"gmp-system\",\"cert-manager\",\"kuma-system\")\n| filter not Appnamespace\n| lookup [\n      fetch dt.entity.kubernetes_cluster, from: -30m \n      | fields id, cluster.name = entity.name, cluster.distribution = kubernetesDistribution, cluster.cluster_id = kubernetesClusterId, cluster.app_enabled = appEnabled \n      | limit 10000\n      ], sourceField:cluster.id, lookupField:id, fields:{cluster.name,cluster.distribution,cluster.cluster_id,cluster.app_enabled}\n| lookup [\n    timeseries usagevalues = sum(dt.kubernetes.container.memory_working_set ),request_value=sum(dt.kubernetes.container.requests_memory ), by:{dt.entity.container_group_instance}, from: -5m, filter: dt.kubernetes.container.type == \"app\"\n    | fieldsAdd request_memory = arrayLast(request_value) | limit 10000\n    | fieldsAdd usage_memory = arrayLast(usagevalues) | limit 10000\n    | fieldsAdd ratio = (request_memory/usage_memory) * 100\n  ], sourceField:id, lookupField:dt.entity.container_group_instance, fields:{ ratio,usage_memory,request_memory }\n|  lookup  [\n    fetch dt.entity.cloud_application, from: -30m \n    | fieldsAdd cloudApplicationLabels\n    | fieldsAdd owner= if(isNotNull(cloudApplicationLabels[dt.owner]),cloudApplicationLabels[dt.owner],else: \"NA\") \n], sourceField:workload.id, lookupField:id, fields:{owner }\n| filter ratio < 60\n| fields workloadid= workload.id, containername= container.name, namespaceName,workloadname=workload.name,podname=pod.name, clustername=cluster.name, owner, ratio, usage_memory,request_memory"
+      },
+      "position": {
+        "x": 0,
+        "y": 1
+      },
+      "predecessors": []
+    }
+  },
+  "actor": "97e8c860-1b2b-4995-b55a-d72382d35243",
+  "owner": "97e8c860-1b2b-4995-b55a-d72382d35243",
+  "ownerType": "USER",
+  "isPrivate": true,
+  "trigger": {},
+  "schemaVersion": 3
+}

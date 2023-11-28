@@ -1,0 +1,11 @@
+apiVersion: dynatrace.com/v1alpha1
+kind: EdgeConnect
+metadata:
+  name: EDGE_NAME_TO_REPLACE
+  namespace: dynatrace
+spec:
+  apiServer: "TENANT_ULR_REPLACE"
+  oauth:
+    clientSecret: edgeconnect-oauth
+    endpoint: https://sso-dev.dynatracelabs.com/sso/oauth2/token
+    resource: CLIENT_RESSOURCE_TO_REPLACE

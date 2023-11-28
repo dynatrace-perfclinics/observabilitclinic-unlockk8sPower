@@ -1,0 +1,46 @@
+- name: envoy
+  image: envoyproxy/envoy:v1.27.2
+  imagePullPolicy: IfNotPresent
+  securityContext:
+    privileged: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    capabilities:
+      drop: [ "ALL" ]
+    seccompProfile:
+      type: RuntimeDefault
+  ports:
+    - name: http
+      containerPort: 80
+      protocol: TCP
+  volumeMounts:
+    - name: envoy-conf
+      readOnly: true
+      mountPath: /etc/envoy/envoy.yaml
+      subPath: envoy.yaml
+  resources:
+    limits:
+      memory: 128Mi
+      cpu: 100m
+    requests:
+      memory: 32Mi
+      cpu: 100m
+  volumes:
+    - name: edge-connect-secrets
+      secret:
+        secretName: {{ include "kubeapi-proxy.fullname" . }}-edge-connect
+        items:
+          - key: oauth-client-id
+            path: oauth/client_id
+          - key: oauth-client-secret
+            path: oauth/client_secret
+
+    - name: envoy-conf
+      configMap:
+        name: kubeproxy-envoy-envoy-config
+        items:
+        - key: envoy.yaml
+          path: envoy.yaml

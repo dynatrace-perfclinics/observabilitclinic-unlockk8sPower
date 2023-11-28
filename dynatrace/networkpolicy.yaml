@@ -1,0 +1,79 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kubeapi-proxy-ingress
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kubeapi-proxy.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kubeapi-proxy-egress
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kubeapi-proxy.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    # allow access to Kubernetes DNS:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+
+    # allow access to the everywhere (let edge connect to tenant)
+    # disallow access to cloud metadata APIs and private networks
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+              - 168.63.129.16/32
+              - 100.100.100.200/32
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+
+    # Add egress to Kubernetes API server endpoints
+    {{- if .Values.networkPolicy.egress.k8sMasterCIDR }}
+    # We have a value set for the master CIDR
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.egress.k8sMasterCIDR }}
+      {{- if .Values.networkPolicy.egress.k8sMasterPort }}
+      ports:
+        - port: {{ .Values.networkPolicy.egress.k8sMasterPort }}
+      {{- end }}
+
+    {{- else }}
+    # Attempt at autodetect if the k8s master CIDR is not set
+    {{- $endpoint := (lookup "v1" "Endpoints" "default" "kubernetes") }}
+    {{- $https_port := 0 }}
+    {{- range $_, $subset := $endpoint.subsets }}
+    {{- range $_, $port := $subset.ports }}
+    {{- if eq "https" $port.name }}
+    {{- range $_, $address := $subset.addresses }}
+    - to:
+        - ipBlock:
+            cidr: {{ printf "%s/32" $address.ip }}
+      ports:
+        - port: {{ $port.port }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+  {{- end }}

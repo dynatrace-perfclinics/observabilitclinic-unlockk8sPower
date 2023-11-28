@@ -1,0 +1,93 @@
+{
+  "id": "58d80961-ca79-4b16-934b-f9a8cf58b44a",
+  "title": "Alerts all the workload without owner",
+  "description": "",
+  "tasks": {
+    "get_workload": {
+      "name": "get_workload",
+      "description": "Executes DQL query",
+      "action": "dynatrace.automations:execute-dql-query",
+      "input": {
+        "query": "fetch dt.entity.cloud_application, from: -30m \n| fieldsAdd cloudApplicationLabels\n| filter isNull(cloudApplicationLabels[`dt.owner`]) \n| fieldsAdd Appnamespace = in(namespaceName, \"dynatrace\",\"kube-system\",\"falco\",\"kyverno\",\"gmp-system\",\"cert-manager\",\"kuma-system\",\"opentelemetry-operator-system\")\n| filter not Appnamespace\n| lookup [\n    fetch dt.entity.kubernetes_cluster\n   | fields clusterId=id, cluster.name=entity.name],sourceField:clustered_by[dt.entity.kubernetes_cluster], lookupField:clusterId,fields:{cluster.name}\n| fields  workload= entity.name, cluster=cluster.name,namespaceName"
+      },
+      "position": {
+        "x": 0,
+        "y": 1
+      },
+      "predecessors": []
+    },
+    "parse_result": {
+      "name": "parse_result",
+      "description": "Build a custom task running js Code",
+      "action": "dynatrace.automations:run-javascript",
+      "input": {
+        "script": "// optional import of sdk modules\nimport { execution } from '@dynatrace-sdk/automation-utils';\n\ntype infoSleep = {\n  namespace: string\n  workload: string\n  clustername: string\n}\ntype Result = {\n  configs: infoOwner[]\n}\nvar resultat=Array<infoSleep> = new Array();\nexport default async function ({ execution_id }) {\n const ex = await execution(execution_id);\n  console.log('Automated script execution on behalf of', ex.trigger);\n  var result = await ex.result('get_workload')\n\n\n  for (const workload of result.records )\n  {\n\n        let sleppresult: sleppInfo = {\n      workload: workload.workload,\n      clustername: workload.cluster,\n      namespace: workload.namespaceName\n    }\n    \n    resultat.push(sleppresult)\n  }\n  const res: Result = { configs: resultat}\n  return res;\n}"
+      },
+      "position": {
+        "x": 0,
+        "y": 2
+      },
+      "predecessors": [
+        "get_workload"
+      ],
+      "conditions": {
+        "states": {
+          "get_workload": "OK"
+        },
+        "custom": "{{ result(\"get_workload\").records | length > 0}} "
+      }
+    },
+    "send_message_1": {
+      "name": "send_message_1",
+      "description": "Send a message to a Slack workspace",
+      "action": "dynatrace.slack:slack-send-message",
+      "input": {
+        "channel": "C04T39FCCQ1",
+        "message": "*Missing Owner Assistant*\nHello,  \nFrom observability data of the last 24h,\nSeveral workload has no Owner defined:\n{% for sleep in result(\"parse_result\").configs %}\n- For cluster *{{ sleep.clustername}}*\n  namespace: *{{ sleep.namespace }}*\n  workload name: *{{ sleep.workload }}*\n{% endfor %}\n",
+        "reaction": [],
+        "connection": "vu9U3hXa3q0AAAABAB5hcHA6ZHluYXRyYWNlLnNsYWNrOmNvbm5lY3Rpb24ABnRlbmFudAAGdGVuYW50ACRhNTJjMDM2ZC1hNGJkLTM0NWMtOTQ5OC0zMzEzMzE1NWNmZWK-71TeFdrerQ",
+        "workflowID": "{{ execution().workflow.id }}",
+        "channelType": "id",
+        "executionID": "{{ execution().id }}",
+        "executionDate": "{{ execution().started_at }}",
+        "appendToThread": false,
+        "selectedRequestType": 0,
+        "attachmentToggleValue": "none"
+      },
+      "position": {
+        "x": 0,
+        "y": 3
+      },
+      "predecessors": [
+        "parse_result"
+      ],
+      "conditions": {
+        "states": {
+          "parse_result": "SUCCESS"
+        }
+      }
+    }
+  },
+  "actor": "97e8c860-1b2b-4995-b55a-d72382d35243",
+  "owner": "97e8c860-1b2b-4995-b55a-d72382d35243",
+  "ownerType": "USER",
+  "isPrivate": true,
+  "trigger": {
+    "schedule": {
+      "rule": null,
+      "trigger": {
+        "type": "time",
+        "time": "09:00"
+      },
+      "timezone": "Europe/Paris",
+      "isActive": false,
+      "isFaulty": false,
+      "nextExecution": null,
+      "filterParameters": {
+        "earliestStart": "2023-10-04"
+      },
+      "inputs": {}
+    }
+  },
+  "schemaVersion": 3
+}
